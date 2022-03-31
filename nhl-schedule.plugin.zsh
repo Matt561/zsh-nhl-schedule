@@ -1,7 +1,6 @@
 #!/bin/bash 
 # Daily NHL schedule in terminal
 function nhl-schedule() {
-
     # See if dependencies are installed
     _areGnuCoreUtilsInstalled
     are_coreutils_installed=$?
@@ -21,16 +20,18 @@ function nhl-schedule() {
     if [[ $# -eq 0 ]]; then
         _displayTodaysGames
         return
+    # Show scores
+    elif [[ $1 == "-s" ]]; then
+        _displayTodaysGames $1
+        return
     fi
 
     # if flag is followed by a colon it is expected to have an argument
-    while getopts 'ht:d:c:x:' flag; do
+    while getopts 'ht:d:s' flag; do
         case "${flag}" in
             h) _displayHelpMenu ;;
-            t) _displaySelectTeamsGames ${OPTARG} ;;
+            t) _displaySelectTeamsGames ${OPTARG} $3 ;;
             d) _displayGamesAtDate ${OPTARG} ;;
-            c) echo "display games for ${OPTARG} conference" ;;
-            x) echo "display games for ${OPTARG} division" ;;
         esac
     done
 }
@@ -41,18 +42,17 @@ function _displayHelpMenu() {
     echo "displays the NHL schedule within your terminal\n"
     echo "Usage:"
     echo "nhl-schedule"
+    echo "nhl-schedule -s"
     echo "nhl-schedule -t \"<team_name>\""
-    echo "nhl-schedule -x \"<division_name>\""
-    echo "nhl-schedule -c \"<conference_name>\""
+    echo "nhl-schedule -t \"<team_name>\" -s"
     echo "nhl-schedule -d \"<yyyy-mm-dd>\""
     echo "nhl-schedule -h"
-
+    
     echo "\nOptions:"
     echo "-h                Show help screen"
+    echo "-s                Display games with live scores"
     echo "-d <yyyy-mm-dd>   Display games for specific date in yyyy-mm-dd format (past or future dates accepted)"
     echo "-t <team_name>    Display schedule for specific team; Ex. Toronto Maple Leafs"
-    echo "-x <division>     Display schedule for a division"
-    echo "-c <conference>   Display schedule for a conference"
     echo "\nBy default, nhl-schedule displays all games for today's date"
     echo "\nWritten by Matthew Grainger"
 }
@@ -78,6 +78,12 @@ function _isJqInstalled() {
 }
 
 function _displaySelectTeamsGames() {
+    should_show_scores=0
+
+    if  [[ $2 == "-s" ]]; then
+        should_show_scores=$((should_show_scores + 1))
+    fi
+
     nhl_api_url="https://statsapi.web.nhl.com/api/v1/schedule"
     json_response=$(curl -s $nhl_api_url -H "Accept: application/json")
 
@@ -93,20 +99,30 @@ function _displaySelectTeamsGames() {
         }
         
         away_team=$(echo $(_jq '.teams.away.team.name'))
+        away_team_score=$(echo $(_jq '.teams.away.score'))
+
         home_team=$(echo $(_jq '.teams.home.team.name'))
-        
+        home_team_score=$(echo $(_jq '.teams.home.score'))
+
         lowercase_away_team=${away_team:l}
         lowercase_home_team=${home_team:l}
 
         game_time=$(echo $(_jq '.gameDate'))
         game_time_local=$(gdate -d$game_time +"%H:%M")
+        game_state=$(echo $(_jq '.status.abstractGameState'))
 
         user_input_lowercase=${1:l}
         
         # check if team is in matchup
         if [[ $user_input_lowercase == $lowercase_away_team ]] || [[ $1 == $lowercase_home_team ]]; then
-            echo "$away_team vs. $home_team ($game_time_local)"
+            # check if should show scores
+            if [[ $should_show_scores == 1 ]] && [[ $game_state == 'Live' ]]; then
+                echo "$away_team ($away_team_score) vs. $home_team ($home_team_score)"
+            else
+                echo "$away_team vs. $home_team ($game_time_local)"
+            fi    
             counter=$((counter + 1))
+            return
         fi
     done
 
@@ -128,19 +144,26 @@ function _displayGamesAtDate() {
 
     for row in $(echo "${game_list}" | jq -r '.[] | @base64'); do
         _jq() {
-        echo ${row} | base64 --decode | jq -r ${1}
+            echo ${row} | base64 --decode | jq -r ${1}
         }
         
         game_time=$(echo $(_jq '.gameDate'))
-        echo "time: $game_time"
+        game_time_local=$(gdate -d$game_time +"%H:%M")
+
         away_team=$(echo $(_jq '.teams.away.team.name'))
         home_team=$(echo $(_jq '.teams.home.team.name'))
-        echo "$away_team vs. $home_team ($game_time)"
+        echo "$away_team vs. $home_team ($game_time_local)"
 
     done
 }
 
 function _displayTodaysGames() {
+    should_show_scores=0
+
+    if  [[ $1 == "-s" ]]; then
+        should_show_scores=$((should_show_scores + 1))
+    fi
+
     nhl_api_url="https://statsapi.web.nhl.com/api/v1/schedule"
     json_response=$(curl -s $nhl_api_url -H "Accept: application/json")
 
@@ -156,11 +179,21 @@ function _displayTodaysGames() {
         }
         
         game_time=$(echo $(_jq '.gameDate'))
+        game_state=$(echo $(_jq '.status.abstractGameState'))
+
         game_time_local=$(gdate -d$game_time +"%H:%M")
 
         away_team=$(echo $(_jq '.teams.away.team.name'))
+        away_team_score=$(echo $(_jq '.teams.away.score'))
+
         home_team=$(echo $(_jq '.teams.home.team.name'))
-        echo "$away_team vs. $home_team [$game_time_local]"
+        home_team_score=$(echo $(_jq '.teams.home.score'))
+
+        if [[ $should_show_scores == 1 ]] && [[ $game_state == "Live" ]]; then
+            echo "$away_team ($away_team_score) vs. $home_team ($home_team_score)"
+        else
+            echo "$away_team vs. $home_team [$game_time_local]"
+        fi
 
     done
 }
