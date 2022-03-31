@@ -54,6 +54,7 @@ function _displayHelpMenu() {
     echo "-x <division>     Display schedule for a division"
     echo "-c <conference>   Display schedule for a conference"
     echo "\nBy default, nhl-schedule displays all games for today's date"
+    echo "\nWritten by Matthew Grainger"
 }
 
 function _areGnuCoreUtilsInstalled() {
